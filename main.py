@@ -18,12 +18,21 @@ def getHistoricalData(ticker, startDate, endDate):
         return None
 
 #%% YF Data
-print(f"Fetching historical data for {strTicker} from {dtStartDate} to {dtEndDate}...")
-df = getHistoricalData(strTicker, dtStartDate, dtEndDate)
-if df is not None:
-    print(f"Data fetched successfully for {strTicker}.")
-    print(df)
-#%% Clean YF Data
 
+dfYfPriceData = getHistoricalData(strTicker, dtStartDate, dtEndDate)
+
+
+#%% Clean YF Data
+print(dfYfPriceData.info())
+
+# Remove non essential columns from data frame
+dfYfPriceData = dfYfPriceData.drop(columns=['Dividends', 'Stock Splits', 'Close', 'Capital Gains', 'Volume'])
+
+# Change the format of the index date column using strftime to yyyy-mm-dd
+dfYfPriceData.index = dfYfPriceData.index.strftime('%Y-%m-%d')
+dfYfPriceData.reset_index(inplace=True)
+
+# Rename columns (current: to be)
+dfYfPriceData.rename(columns={'Date': 'price_date'}, inplace=True)
 
 #%% Insert Data into DB
