@@ -17,6 +17,46 @@ def getHistoricalData(ticker, startDate, endDate):
         print(f"Error fetching data for {ticker}: {e}")
         return None
 
+def insertDataToSqlite(df):
+    
+    if df.empty:
+        return "Error: DataFrame is empty. No data to insert."
+    
+    try: 
+        
+        #connect to db
+        conn = sqlite3.connect('dbFDDSecurities.db')
+        
+        # create cursor object
+        c = conn.cursor()
+        
+        # Check if 't_price_data' table exists, if not create it
+        c.execute('''
+                CREATE TABLE IF NOT EXISTS t_price_data (
+                price_date TEXT,
+                ticker TEXT,
+                price_open REAL,
+                price_high REAL,
+                price_low REAL,
+                price_adj_close REAL
+            )
+        ''')
+        
+        # Insert the data from the dataframe into the table
+        # Or replace existing data if ticker+date already exist in db
+        
+        df.tosql('t_price', conn, if_exists='replace', index=False)
+        
+        # Commit changes
+        conn.commit()
+        
+        # Close connection
+        conn.close()
+        
+        return "Data inserted successfully."
+    except Exception as e:
+        return f"Error inserting data into database: {e}"
+    
 #%% YF Data
 
 dfYfPriceData = getHistoricalData(strTicker, dtStartDate, dtEndDate)
@@ -33,6 +73,13 @@ dfYfPriceData.index = dfYfPriceData.index.strftime('%Y-%m-%d')
 dfYfPriceData.reset_index(inplace=True)
 
 # Rename columns (current: to be)
-dfYfPriceData.rename(columns={'Date': 'price_date'}, inplace=True)
+dfYfPriceData.rename(columns={'Date': 'Price Date', 'Open': 'Price Open', 'High': 'Price High', 'Low': 'Price Low', 'Adj Close': 'Price Adj Close'}, inplace=True)
+
+# Insert a new column called 'Ticker' with the value of string ticker
+dfYfPriceData.insert(0, 'Ticker', strTicker.upper())
+
+# Reorder columns so date is first, then ticker, open, high, low, adj close
+dfYfPriceData = dfYfPriceData[['Price Date', 'Ticker', 'Price Open', 'Price High', 'Price Low', 'Price Adj Close']]
 
 #%% Insert Data into DB
+result = insertDataToSqlite(dfYfPriceData)
