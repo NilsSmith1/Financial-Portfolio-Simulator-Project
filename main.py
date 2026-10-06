@@ -83,3 +83,48 @@ dfYfPriceData = dfYfPriceData[['Price Date', 'Ticker', 'Price Open', 'Price High
 
 #%% Insert Data into DB
 result = insertDataToSqlite(dfYfPriceData)
+
+
+
+#%% Time to mess around and try to incorporate a monte carlo
+
+#Simulation
+
+def discountFactor(years, r):
+    return(1/(1+r)^years)
+    
+def payoffFunction(stateOfWorld):
+    
+
+#Risk neutral probability measure
+def P()
+
+def blackScholesModel():
+    #Assume that stock price follows the function of a Brownian motion
+    
+    #Make an estimation for todays price of an asset
+    
+    #Compute discount factor
+    
+    dfYfPriceData
+    
+    
+    
+    derivativeValue 
+
+
+#n is number of simulations
+n = 10
+s=0
+
+for i in range(n):
+    # run the simulation for the ith time, and produce result ri
+    r=1
+    s = s+1
+
+SimulationAverage = s/n
+print(SimulationAverage)
+
+
+
+# %%
