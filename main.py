@@ -1,7 +1,27 @@
+# This is a python script that will run a monte carlo simulation on a financial portfolio to determine
+# the expected return and risk of the portfolio. 
+
+
+# https://www.youtube.com/watch?v=DINIzZ4EO6I
+# https://en.wikipedia.org/wiki/Monte_Carlo_methods_in_finance
+# https://www.investopedia.com/articles/investing/112514/monte-carlo-simulation-basics.asp
+# https://en.wikipedia.org/wiki/Cholesky_decomposition
+# https://en.wikipedia.org/wiki/Brownian_motion
+# https://www.investopedia.com/ask/answers/062215/how-do-i-calculate-my-portfolios-investment-returns-and-performance.asp
+# 
+
+
 #%% Packages to Import
+from numpy import sqrt
+from numpy import log
+from numpy import exp
+import numpy as np
 import yfinance as yf
 import pandas as pd
 import sqlite3
+
+
+
 #%% Global Variables
 strTicker = 'voo'
 dtStartDate = '2010-01-01'
@@ -87,43 +107,99 @@ result = insertDataToSqlite(dfYfPriceData)
 
 
 #%% Time to mess around and try to incorporate a monte carlo
-
+import yfinance as yf
+import numpy as np
 #Simulation
 
-def discountFactor(years, r):
-    return(1/(1+r)^years)
-    
-def payoffFunction(stateOfWorld):
-    
+#def discountFactor(years, inflationRate):
+    #return(1/(1+inflationRate)**years)
 
-#Risk neutral probability measure
-def P()
+#def payoffFunction(stateOfWorld):
+    #pass
 
-def blackScholesModel():
-    #Assume that stock price follows the function of a Brownian motion
-    
-    #Make an estimation for todays price of an asset
-    
-    #Compute discount factor
-    
-    dfYfPriceData
-    
-    
-    
-    derivativeValue 
+# A given asset's price can be modelled as a geometric Brownian motion
+# ds/s = (expected return) *dt + (std returns)*(random variable) *sqrt(dt)
+# random variable = N(0,1) where N is a standard normal distribution
 
 
-#n is number of simulations
-n = 10
-s=0
+#def forecastedInflationRate(basCPI, annualRate, years):
+    
+    #def projectYear(currentCPI, remainingYears, history):
+        #if remainingYears == 0:
+            #return history
+        
+        #nextCPI = currentCPI * (1 + annualRate)
+        #return projectYear(nextCPI, remainingYears - 1, history + [nextCPI])
+    
+    #return projectYear(basCPI, years, [])
 
-for i in range(n):
-    # run the simulation for the ith time, and produce result ri
-    r=1
-    s = s+1
 
-SimulationAverage = s/n
-print(SimulationAverage)
+
+def estimateParameters(prices: pd.Dataframe):
+    # calculate the log returns of prices
+    logReturns = np.log(prices / prices.shift(1)).dropna()
+    
+    # calculate the mean and standard deviation of the log returns (market open 252 days a year)
+    meanLogReturn = logReturns.mean().values * 252
+    stdLogReturn = logReturns.std().values * np.sqrt(252)
+    covLogReturn = logReturns.cov().values * 252
+
+    return meanLogReturn, stdLogReturn, covLogReturn
+
+
+
+# Currently does not allow for rebalancing of the portfolio, but can be added in the future.
+def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInvestment, stepsPerYear, seed=None):
+    # A given asset's price can be modelled as a geometric Brownian motion
+    # ds/s = (expected return) *dt + (std returns)*(random variable) *sqrt(dt)
+    # random variable = N(0,1) where N is a standard normal distribution
+    
+    # mean return and standard deviation of log returns
+    meanLogReturn, stdLogReturn, covLogReturn = estimateParameters(prices)
+    
+    #calculate change in time
+    dt = 1/stepsPerYear
+    
+    nSteps = int(years * stepsPerYear)
+    nAssets = len(prices.columns)
+    
+    
+    #generate the random variable
+    randomVariable = np.random.normal(0, 1, (years * stepsPerYear, numSimulations))
+    shocks = randomVariable @ np.linalg.cholesky(covLogReturn).T * np.sqrt(dt)
+    
+    #weights
+    weights = np.array(weights)
+    
+    # Cholesky factor
+    L = np.linalg.cholesky(covLogReturn)
+    drift = (meanLogReturn - 0.5 * stdLogReturn ** 2) * dt
+    
+    # Asset price paths
+    logGrowth = np.cumsum(drift + shocks, axis=0)
+    assetGrowth = np.exp(logGrowth)
+    
+    # Buy and hold strategy
+    pathValues = (assetGrowth * (weights * initialInvestment).reshape(-1, 1)).sum(axis=0)
+    
+    return pathValues
+    
+    
+    
+    
+# Create a basic mock portfolio
+dtStartDate = '2010-01-01'
+dtEndDate = '2020-12-31'
+tickers = ['VOO', 'AAPL', 'MSFT', 'GOOGL', 'AMZN']
+prices = yf.download(tickers, start=dtStartDate, end=dtEndDate)['Adj Close']   
+prices = prices.dropna()  # Drop rows with NaN values
+    
+simulationResults = simulationPortfolioReturn(prices, [1], 10, 1000, 10000, 252)
+  
+
+
+
+
 
 
 
