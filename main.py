@@ -19,120 +19,9 @@ import numpy as np
 import yfinance as yf
 import pandas as pd
 import sqlite3
+import matplotlib.pyplot as plt
 
-
-
-#%% Global Variables
-strTicker = 'voo'
-dtStartDate = '2010-01-01'
-dtEndDate = '2020-12-31'
-
-#%% Functions
-def getHistoricalData(ticker, startDate, endDate):
-    try: 
-        ticker = yf.Ticker(ticker)
-        df = ticker.history(start=startDate, end=endDate, auto_adjust=False)
-        return df
-    except Exception as e:
-        print(f"Error fetching data for {ticker}: {e}")
-        return None
-
-def insertDataToSqlite(df):
-    
-    if df.empty:
-        return "Error: DataFrame is empty. No data to insert."
-    
-    try: 
-        
-        #connect to db
-        conn = sqlite3.connect('dbFDDSecurities.db')
-        
-        # create cursor object
-        c = conn.cursor()
-        
-        # Check if 't_price_data' table exists, if not create it
-        c.execute('''
-                CREATE TABLE IF NOT EXISTS t_price_data (
-                price_date TEXT,
-                ticker TEXT,
-                price_open REAL,
-                price_high REAL,
-                price_low REAL,
-                price_adj_close REAL
-            )
-        ''')
-        
-        # Insert the data from the dataframe into the table
-        # Or replace existing data if ticker+date already exist in db
-        
-        df.tosql('t_price', conn, if_exists='replace', index=False)
-        
-        # Commit changes
-        conn.commit()
-        
-        # Close connection
-        conn.close()
-        
-        return "Data inserted successfully."
-    except Exception as e:
-        return f"Error inserting data into database: {e}"
-    
-#%% YF Data
-
-dfYfPriceData = getHistoricalData(strTicker, dtStartDate, dtEndDate)
-
-
-#%% Clean YF Data
-print(dfYfPriceData.info())
-
-# Remove non essential columns from data frame
-dfYfPriceData = dfYfPriceData.drop(columns=['Dividends', 'Stock Splits', 'Close', 'Capital Gains', 'Volume'])
-
-# Change the format of the index date column using strftime to yyyy-mm-dd
-dfYfPriceData.index = dfYfPriceData.index.strftime('%Y-%m-%d')
-dfYfPriceData.reset_index(inplace=True)
-
-# Rename columns (current: to be)
-dfYfPriceData.rename(columns={'Date': 'Price Date', 'Open': 'Price Open', 'High': 'Price High', 'Low': 'Price Low', 'Adj Close': 'Price Adj Close'}, inplace=True)
-
-# Insert a new column called 'Ticker' with the value of string ticker
-dfYfPriceData.insert(0, 'Ticker', strTicker.upper())
-
-# Reorder columns so date is first, then ticker, open, high, low, adj close
-dfYfPriceData = dfYfPriceData[['Price Date', 'Ticker', 'Price Open', 'Price High', 'Price Low', 'Price Adj Close']]
-
-#%% Insert Data into DB
-result = insertDataToSqlite(dfYfPriceData)
-
-
-
-#%% Time to mess around and try to incorporate a monte carlo
-import yfinance as yf
-import numpy as np
-#Simulation
-
-#def discountFactor(years, inflationRate):
-    #return(1/(1+inflationRate)**years)
-
-#def payoffFunction(stateOfWorld):
-    #pass
-
-# A given asset's price can be modelled as a geometric Brownian motion
-# ds/s = (expected return) *dt + (std returns)*(random variable) *sqrt(dt)
-# random variable = N(0,1) where N is a standard normal distribution
-
-
-#def forecastedInflationRate(basCPI, annualRate, years):
-    
-    #def projectYear(currentCPI, remainingYears, history):
-        #if remainingYears == 0:
-            #return history
-        
-        #nextCPI = currentCPI * (1 + annualRate)
-        #return projectYear(nextCPI, remainingYears - 1, history + [nextCPI])
-    
-    #return projectYear(basCPI, years, [])
-
+#%% Portfolio Simulation Functions
 
 
 def estimateParameters(prices: pd.DataFrame):
@@ -145,6 +34,8 @@ def estimateParameters(prices: pd.DataFrame):
     covLogReturn = logReturns.cov().values * 252
 
     return meanLogReturn, stdLogReturn, covLogReturn
+
+
 
 
 
@@ -173,8 +64,6 @@ def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInv
     
     #weights
     weights = np.array(weights)
-    
-    # Cholesky factor
 
     drift = (meanLogReturn - 0.5 * stdLogReturn ** 2) * dt
     
@@ -190,7 +79,52 @@ def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInv
     return np.vstack([start, pathValues])
     
     
+def simulationPortfolioReturnYearByYearAverage(prices, weights, years, numSimulations, initialInvestment, stepsPerYear, seed=None):
+    # A given asset's price can be modelled as a geometric Brownian motion
+    # ds/s = (expected return) *dt + (std returns)*(random variable) *sqrt(dt)
+    # random variable = N(0,1) where N is a standard normal distribution
     
+    # mean return and standard deviation of log returns
+    meanLogReturn, stdLogReturn, covLogReturn = estimateParameters(prices)
+    
+    #calculate change in time
+    dt = 1/stepsPerYear
+    
+    nSteps = int(years * stepsPerYear)
+    nAssets = len(prices.columns)
+    
+    L = np.linalg.cholesky(covLogReturn)
+    
+    #generate the random variable
+    rng = np.random.default_rng(seed)
+    Z = rng.standard_normal((nSteps, numSimulations, nAssets))
+    shocks = (Z @ L.T) * np.sqrt(dt)
+
+    
+    #weights
+    weights = np.array(weights)
+
+    drift = (meanLogReturn - 0.5 * stdLogReturn ** 2) * dt
+    
+    # Asset price paths
+    logGrowth = np.cumsum(drift + shocks, axis=0)
+    assetGrowth = np.exp(logGrowth)
+    
+    # Buy and hold strategy
+    allocations = weights * initialInvestment    
+    pathValues = (assetGrowth * allocations).sum(axis=2) 
+    
+    start = np.full((1, numSimulations), initialInvestment, dtype=float)
+    
+    yearByYearAverageReturns = []
+    
+    for year in range(years):
+        yearEndIndex = (year + 1) * stepsPerYear
+        yearEndValues = pathValues[yearEndIndex - 1]
+        yearByYearAverageReturns.append(np.mean(yearEndValues))
+        
+    return yearByYearAverageReturns
+           
     
 # Create a basic mock portfolio
 dtStartDate = '2010-01-01'
@@ -203,16 +137,37 @@ prices = prices[tickers] #make sure order of columns is same as tickers list
     
     
 # Run the simulation with the mock portfolio
-simulationResults = simulationPortfolioReturn(prices, [1], 10, 1000, 10000, 252)
+simulationYears = 10
+simulationResults = simulationPortfolioReturn(prices, [1], simulationYears, 1000, 10000, 252)
   
 # Average return and standard deviation of the simulation results
 
 averageReturn = np.mean(simulationResults)
-print(f"Average return after 10 years: ${averageReturn:.2f}")
+#print(f"Average return after {simulationYears} years: ${averageReturn:.2f}")
+
+#plt.boxplot(simulationResults)
+#plt.title(f"Distribution of Forecasted Portfolio Valuation After {simulationYears} Years") 
+
+#plt.show()
+
+simulationResultsYearly = simulationPortfolioReturnYearByYearAverage(prices, [1], simulationYears, 1000, 10000, 252)
+print(f"Year by year average returns: {simulationResultsYearly}")
+
+x = np.arange(1, simulationYears + 1)
+y = simulationResultsYearly
+coefficients = np.polyfit(x, y, 2)
+polynomial = np.poly1d(coefficients)
+x_line = np.linspace(x.min(), x.max(), 100)
+plt.plot(x_line, polynomial(x_line), color="purple")
+plt.scatter(x, y)
+plt.xlabel("years")
+plt.ylabel("average portfolio value (USD)")
+plt.title(f"Year by Year Average Returns After {simulationYears} Years")
 
 
 
 
 
+plt.show()
 
 # %%
