@@ -135,7 +135,7 @@ import numpy as np
 
 
 
-def estimateParameters(prices: pd.Dataframe):
+def estimateParameters(prices: pd.DataFrame):
     # calculate the log returns of prices
     logReturns = np.log(prices / prices.shift(1)).dropna()
     
@@ -163,16 +163,19 @@ def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInv
     nSteps = int(years * stepsPerYear)
     nAssets = len(prices.columns)
     
+    L = np.linalg.cholesky(covLogReturn)
     
     #generate the random variable
-    randomVariable = np.random.normal(0, 1, (years * stepsPerYear, numSimulations))
-    shocks = randomVariable @ np.linalg.cholesky(covLogReturn).T * np.sqrt(dt)
+    rng = np.random.default_rng(seed)
+    Z = rng.standard_normal((nSteps, numSimulations, nAssets))
+    shocks = (Z @ L.T) * np.sqrt(dt)
+
     
     #weights
     weights = np.array(weights)
     
     # Cholesky factor
-    L = np.linalg.cholesky(covLogReturn)
+
     drift = (meanLogReturn - 0.5 * stdLogReturn ** 2) * dt
     
     # Asset price paths
@@ -180,9 +183,11 @@ def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInv
     assetGrowth = np.exp(logGrowth)
     
     # Buy and hold strategy
-    pathValues = (assetGrowth * (weights * initialInvestment).reshape(-1, 1)).sum(axis=0)
+    allocations = weights * initialInvestment    
+    pathValues = (assetGrowth * allocations).sum(axis=2) 
     
-    return pathValues
+    start = np.full((1, numSimulations), initialInvestment, dtype=float)
+    return np.vstack([start, pathValues])
     
     
     
@@ -190,13 +195,20 @@ def simulationPortfolioReturn(prices, weights, years, numSimulations, initialInv
 # Create a basic mock portfolio
 dtStartDate = '2010-01-01'
 dtEndDate = '2020-12-31'
-tickers = ['VOO', 'AAPL', 'MSFT', 'GOOGL', 'AMZN']
-prices = yf.download(tickers, start=dtStartDate, end=dtEndDate)['Adj Close']   
+tickers = ['VOO']
+data = yf.download(tickers, start=dtStartDate, end=dtEndDate, auto_adjust=True)
+prices = data.xs('Close', axis=1, level='Price')
 prices = prices.dropna()  # Drop rows with NaN values
+prices = prices[tickers] #make sure order of columns is same as tickers list
     
+    
+# Run the simulation with the mock portfolio
 simulationResults = simulationPortfolioReturn(prices, [1], 10, 1000, 10000, 252)
   
+# Average return and standard deviation of the simulation results
 
+averageReturn = np.mean(simulationResults)
+print(f"Average return after 10 years: ${averageReturn:.2f}")
 
 
 
